@@ -1,0 +1,13 @@
+.vs/
+**/bin/
+**/obj/
+
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.csproj.user
+*.DotSettings.user
+
+TestResults/
+artifacts/
