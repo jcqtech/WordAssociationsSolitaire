@@ -21,6 +21,13 @@ namespace WordAssociationsSolitaire
         private float _defineT;       // definition popup entrance 0..1
         private string _defineWord = "";
         private string _defineText = "";
+        private int _helpWrapWidth = -1;
+        private float _helpWrapScale = -1f;
+        private List<List<string>> _helpWrapped = new();
+        private string _definitionWrapText = "";
+        private int _definitionWrapWidth = -1;
+        private float _definitionWrapScale = -1f;
+        private List<string> _definitionWrapped = new();
 
         private static readonly string[] ToolNames = { "Undo", "Hint", "Help", "Define" };
         // Fluent UI System Icons (MIT-licensed, in Icons/) rendered as tinted white masks.
@@ -416,12 +423,11 @@ namespace WordAssociationsSolitaire
             float lineH = _font.MeasureString("Ag").Y;
             float titleH = _titleFont.MeasureString("How to Play").Y * titleScale;
 
-            var wrapped = new List<List<string>>();
+            var wrapped = WrappedHelpLines(innerW - Sc(2), bodyScale);
             float contentH = titleH + Sc(16);
-            foreach (var (_, body) in HelpItems)
+            for (int i = 0; i < HelpItems.Length; i++)
             {
-                var lines = WrapText(body, innerW - Sc(2), bodyScale);
-                wrapped.Add(lines);
+                var lines = wrapped[i];
                 contentH += lineH * headScale + Sc(3) + lines.Count * (lineH * bodyScale) + Sc(12);
             }
             float footH = lineH * 0.5f * S + Sc(26); // extra breathing room above the close hint
@@ -467,7 +473,7 @@ namespace WordAssociationsSolitaire
             float bodyScale = 0.72f * S;
             float lineH = _font.MeasureString("Ag").Y;
             float titleH = _titleFont.MeasureString(_defineWord).Y * titleScale;
-            var lines = WrapText(_defineText, innerW, bodyScale);
+            var lines = WrappedDefinitionLines(_defineText, innerW, bodyScale);
 
             int ph = (int)(pad * 2 + titleH + Sc(16) + lines.Count * (lineH * bodyScale) + Sc(44));
             int rise = (int)((1f - e) * Sc(40));
@@ -518,6 +524,32 @@ namespace WordAssociationsSolitaire
             _spriteBatch.DrawString(_font, text, pos + new Vector2(1, 1), new Color(0, 0, 0, 110),
                                     0f, Vector2.Zero, scale, SpriteEffects.None, 0f);
             _spriteBatch.DrawString(_font, text, pos, color, 0f, Vector2.Zero, scale, SpriteEffects.None, 0f);
+        }
+
+        private List<List<string>> WrappedHelpLines(int maxWidth, float scale)
+        {
+            if (_helpWrapWidth == maxWidth && Math.Abs(_helpWrapScale - scale) < 0.0001f)
+                return _helpWrapped;
+
+            _helpWrapWidth = maxWidth;
+            _helpWrapScale = scale;
+            _helpWrapped = new List<List<string>>(HelpItems.Length);
+            foreach (var (_, body) in HelpItems)
+                _helpWrapped.Add(WrapText(body, maxWidth, scale));
+            return _helpWrapped;
+        }
+
+        private List<string> WrappedDefinitionLines(string text, int maxWidth, float scale)
+        {
+            if (_definitionWrapText == text && _definitionWrapWidth == maxWidth
+                && Math.Abs(_definitionWrapScale - scale) < 0.0001f)
+                return _definitionWrapped;
+
+            _definitionWrapText = text;
+            _definitionWrapWidth = maxWidth;
+            _definitionWrapScale = scale;
+            _definitionWrapped = WrapText(text, maxWidth, scale);
+            return _definitionWrapped;
         }
 
         /// Greedy word-wrap of `text` to `maxWidth` pixels at the given font scale.

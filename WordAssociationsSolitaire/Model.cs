@@ -3,6 +3,7 @@ using System.Collections.Generic;
 namespace WordAssociationsSolitaire
 {
     public enum GameState { Playing, Won, Lost }
+    public enum LossReason { None, OutOfMoves, NoLegalMoves }
 
     /// A single playing card. A card belongs to exactly one category and lives in
     /// exactly one container (a column, the stock, the waste, or a slot) at a time.

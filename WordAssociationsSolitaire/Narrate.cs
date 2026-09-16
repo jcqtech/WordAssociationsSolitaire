@@ -91,5 +91,9 @@ namespace WordAssociationsSolitaire
         public static string Moves(GameBoard b) =>
             b.Unlimited ? "Unlimited moves." : $"{Plural(b.MovesLeft, "move")} left.";
         public static string Solved(GameBoard b) => $"Solved {b.ClearedCategories} of {b.TotalCategories} sets.";
+        public static string Loss(GameBoard b) =>
+            $"{(b.LossReason == LossReason.OutOfMoves ? "Out of moves." : "No legal moves remain.")} " +
+            $"Solved {b.ClearedCategories} of {b.TotalCategories} sets. " +
+            "Take back your last move to keep trying, or start a new game.";
     }
 }

@@ -175,18 +175,17 @@ namespace WordAssociationsSolitaire
             ApplyVolume();
         }
 
-        /// Push the current move-limit / unlimited settings onto the LIVE board. Moves already
-        /// spent are preserved when limited; enabling unlimited forgives them (and hides the
-        /// counter). Called whenever the player changes a move setting.
+        /// Push the current move-limit / unlimited settings onto the live board while preserving
+        /// the number of moves already made. Called whenever the player changes a move setting
+        /// and after an undo restores an older snapshot.
         private void ApplyMoveSettingsToBoard()
         {
             if (_board == null) return;
-            int used = Math.Max(0, _board.InitialMoves - _board.MovesLeft);
             _board.Unlimited = Config.Active.UnlimitedMoves;
             _board.InitialMoves = Config.Active.Moves;
             _board.MovesLeft = _board.Unlimited
                 ? Config.Active.Moves
-                : Math.Max(0, Config.Active.Moves - used);
+                : Math.Max(0, Config.Active.Moves - _board.MovesMade);
             _board.UpdateState();
         }
 

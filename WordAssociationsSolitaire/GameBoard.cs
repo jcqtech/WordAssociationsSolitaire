@@ -33,11 +33,13 @@ namespace WordAssociationsSolitaire
 
         public int MovesLeft;
         public int InitialMoves;
+        public int MovesMade;
         /// When true the move budget is ignored: moves are never spent and the game can never
         /// be lost for running out of moves (a true dead-end can still end it). The UI shows an
         /// infinity marker in place of the counter.
         public bool Unlimited;
         public GameState State = GameState.Playing;
+        public LossReason LossReason = LossReason.None;
         public int ClearedCategories;
 
         /// Set the moment a category is completed (its slot filled to size), so the
@@ -59,6 +61,7 @@ namespace WordAssociationsSolitaire
 
             MovesLeft = moves;
             InitialMoves = moves;
+            MovesMade = 0;
             Unlimited = unlimited;
 
             foreach (var col in Columns)
@@ -296,15 +299,33 @@ namespace WordAssociationsSolitaire
 
         private void SpendAndUpdate()
         {
+            MovesMade++;
             if (!Unlimited) MovesLeft--;
             UpdateState();
         }
 
         public void UpdateState()
         {
-            if (ClearedCategories >= TotalCategories) { State = GameState.Won; return; }
-            if (!HasAnyLegalMove()) { State = GameState.Lost; return; }
+            if (ClearedCategories >= TotalCategories)
+            {
+                State = GameState.Won;
+                LossReason = LossReason.None;
+                return;
+            }
+            if (!Unlimited && MovesLeft <= 0)
+            {
+                State = GameState.Lost;
+                LossReason = LossReason.OutOfMoves;
+                return;
+            }
+            if (!HasAnyLegalMove())
+            {
+                State = GameState.Lost;
+                LossReason = LossReason.NoLegalMoves;
+                return;
+            }
             State = GameState.Playing;
+            LossReason = LossReason.None;
         }
 
         public bool HasAnyLegalMove()

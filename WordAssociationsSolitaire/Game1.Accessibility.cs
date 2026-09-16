@@ -98,6 +98,10 @@ namespace WordAssociationsSolitaire
             bool shift = ks.IsKeyDown(Keys.LeftShift) || ks.IsKeyDown(Keys.RightShift);
             bool P(Keys k) => ks.IsKeyDown(k) && !prev.IsKeyDown(k);
 
+            // Settings owns the keyboard while open. Escape is handled by Update before this
+            // method runs, so the popup can still be dismissed without touching the board.
+            if (_settingsOpen) return;
+
             // New Game works from anywhere.
             if (P(Keys.N)) { NewGame(); Speak("New game.", true, true); return; }
 
@@ -108,6 +112,10 @@ namespace WordAssociationsSolitaire
                 if (_helpOpen) _helpOpen = false; else _defineActive = false;
                 return;
             }
+
+            // The deal animation stores the original column indices. Board mutations must wait
+            // until it has finished so those indices remain valid while it renders.
+            if (Dealing) return;
 
             // Define-mode toggle (announced by the edge detector).
             if (P(Keys.D) && _board.State == GameState.Playing && !modalText)
@@ -215,6 +223,7 @@ namespace WordAssociationsSolitaire
 
         private void ActivateDrawPile()
         {
+            if (Dealing) return;
             if (_defineMode) { DefineFocused(); return; }
             if (_hasSel && _selWaste) { _hasSel = false; Speak("Selection cleared.", true, true); return; }
             if (_hasSel) { Speak("Can't move there.", true, true); return; }
@@ -226,6 +235,7 @@ namespace WordAssociationsSolitaire
 
         private void ActivateDeck()
         {
+            if (Dealing) return;
             if (!_board.CanDraw()) { Speak("Deck can't be drawn.", true, true); return; }
             bool recycling = _board.Stock.Count == 0 && _board.Waste.Count > 0;
             var oldWaste = recycling ? new List<Card>(_board.Waste) : null;
@@ -281,7 +291,7 @@ namespace WordAssociationsSolitaire
         /// (toColumn=true), reusing the exact move + undo + animation path used by mouse drops.
         private bool TryKeyboardMove(bool toColumn, int dst)
         {
-            if (!_hasSel) return false;
+            if (Dealing || !_hasSel) return false;
 
             var snap = _board.Clone();
             List<Card> moving;

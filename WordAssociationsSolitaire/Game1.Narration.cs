@@ -47,19 +47,17 @@ namespace WordAssociationsSolitaire
         private string WinNarration()
         {
             var sb = new StringBuilder(
-                $"You win! Cleared all {_board.TotalCategories} sets with {_winMovesLeft} moves left in {FormatTime(_winSeconds)}.");
+                $"You win! Cleared all {_board.TotalCategories} sets in {_winMovesUsed} moves and {FormatTime(_winSeconds)}.");
             if (_topScores.Count > 0)
             {
                 sb.Append(" Best scores:");
                 for (int i = 0; i < _topScores.Count; i++)
-                    sb.Append($" Rank {i + 1}, {_topScores[i].MovesLeft} moves left, time {FormatTime(_topScores[i].Seconds)}.");
+                    sb.Append($" Rank {i + 1}, {_topScores[i].MovesUsed} moves, time {FormatTime(_topScores[i].Seconds)}.");
             }
             return sb.ToString();
         }
 
-        private string LoseNarration() =>
-            $"Out of moves. Solved {_board.ClearedCategories} of {_board.TotalCategories} sets. " +
-            "Take back your last move to keep trying, or start a new game.";
+        private string LoseNarration() => Narrate.Loss(_board);
 
         // ---------------------------------------------------------- focus labels + rects
 
@@ -126,9 +124,12 @@ namespace WordAssociationsSolitaire
         private Rectangle SelectedRect()
         {
             if (_selWaste) return WasteRect();
+            if (_selCol < 0 || _selCol >= _board.Columns.Count) return Rectangle.Empty;
             var c = _board.Columns[_selCol];
+            if (c.Count == 0) return Rectangle.Empty;
             int[] ys = ColumnCardYs(_selCol);
-            int top = ys[Math.Min(_selIdx, ys.Length - 1)];
+            if (ys.Length == 0) return Rectangle.Empty;
+            int top = ys[Math.Clamp(_selIdx, 0, ys.Length - 1)];
             int bottom = ys[^1] + Layout.CardH;
             return new Rectangle(Layout.ColX(_selCol), top, Layout.CardW, bottom - top);
         }
@@ -224,13 +225,16 @@ namespace WordAssociationsSolitaire
         /// distinct from the gold hint. Drawn over the board/toolbar, under any modal overlay.
         private void DrawKeyboardFocus()
         {
-            if (_board.State != GameState.Playing || _helpOpen || _defineActive) return;
+            if (_board.State != GameState.Playing || _helpOpen || _defineActive || _settingsOpen) return;
 
             if (_hasSel)
             {
                 var sr = SelectedRect();
-                DrawRoundFill(sr, SelectFill);
-                DrawRoundRing(sr, SelectRing);
+                if (sr.Width > 0 && sr.Height > 0)
+                {
+                    DrawRoundFill(sr, SelectFill);
+                    DrawRoundRing(sr, SelectRing);
+                }
             }
 
             if (!_kbActive) return;

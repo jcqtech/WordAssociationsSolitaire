@@ -77,8 +77,15 @@ namespace WordAssociationsSolitaire
 
         private void Undo()
         {
-            if (_undoStack.Count == 0) return;
+            // A completed game is already persisted to the score table; undo is available only
+            // during play or from the loss screen, where it can safely resume the same run.
+            if (_undoStack.Count == 0 || _board.State == GameState.Won) return;
             PlaySound("deny"); // undo cue
+
+            // The restored snapshot has different card instances and geometry, so no input
+            // state may keep references or indices from the board being replaced.
+            CancelDrag();
+            _hasSel = false;
 
             // Where every card rests right now (pre-undo).
             var from = new Dictionary<int, Rectangle>();
@@ -88,6 +95,7 @@ namespace WordAssociationsSolitaire
             var prev = _undoStack.Pop();
             ClearTransientAnimations();
             _board = prev;
+            ApplyMoveSettingsToBoard();
             ResetWinState();
             _hintActive = false;
             _hintIdx = -1;

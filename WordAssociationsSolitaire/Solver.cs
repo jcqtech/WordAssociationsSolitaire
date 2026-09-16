@@ -11,7 +11,7 @@ namespace WordAssociationsSolitaire
         {
             var b = board.Clone();
             bool won = Greedy(b);
-            movesUsed = b.InitialMoves - b.MovesLeft;
+            movesUsed = b.MovesMade;
             return won;
         }
 

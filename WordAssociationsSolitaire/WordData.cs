@@ -197,19 +197,26 @@ namespace WordAssociationsSolitaire
             Config.Active = cfg;
             EnsureLoaded();
 
-            for (int attempt = 0; attempt < 600; attempt++)
+            // Random deals provide variety, but low move budgets have a very low acceptance
+            // rate. Keep the synchronous solver work bounded before using the fast constructive
+            // dealer so starting a game cannot stall the render thread.
+            const int randomAttempts = 48;
+            for (int attempt = 0; attempt < randomAttempts; attempt++)
             {
                 var board = Deal(cfg, rng);
                 if (board != null && Solver.IsWinnable(board)) return board;
             }
-            for (int attempt = 0; attempt < 200; attempt++)
+
+            const int constructiveAttempts = 24;
+            for (int attempt = 0; attempt < constructiveAttempts; attempt++)
             {
                 var built = DealWinnable(cfg, rng);
                 if (built != null && Solver.IsWinnable(built)) return built;
-                var board = Deal(cfg, rng);
-                if (board != null && Solver.IsWinnable(board)) return board;
             }
-            return DealWinnable(cfg, rng) ?? Deal(cfg, rng);
+
+            throw new InvalidOperationException(
+                "Could not generate a winnable board for the supplied configuration. " +
+                "Ensure each column and the stock can be partitioned into the configured set sizes.");
         }
 
         // --------------------------------------------------------------- building
@@ -352,13 +359,18 @@ namespace WordAssociationsSolitaire
 
             int[] colSizes = cfg.ColumnSizes;
             int colTotal = colSizes.Sum();
+            if (colTotal > cfg.TotalCards) return null;
             int stockTotal = Math.Max(0, cfg.TotalCards - colTotal);
 
             // Decide the set sizes that exactly fill each column and the stock.
             var colSetSizes = new List<int>[colSizes.Length];
             for (int j = 0; j < colSizes.Length; j++)
+            {
                 colSetSizes[j] = PartitionSizes(colSizes[j], lo, hi, rng);
+                if (colSetSizes[j] == null) return null;
+            }
             var stockSetSizes = PartitionSizes(stockTotal, lo, hi, rng);
+            if (stockSetSizes == null) return null;
 
             // Reserve actual unused sets of each requested size from one shared pool, never
             // taking two categories that conflict (so the whole deal is conflict-free).
@@ -416,21 +428,27 @@ namespace WordAssociationsSolitaire
         /// Split `total` into whole-set sizes, each within [lo, hi], summing to exactly total.
         private static List<int> PartitionSizes(int total, int lo, int hi, Random rng)
         {
-            var parts = new List<int>();
-            if (total <= 0) return parts;
+            if (total == 0) return new List<int>();
+            if (total < 0) return null;
             lo = Math.Max(1, lo);
             hi = Math.Max(lo, hi);
 
+            int minParts = (total + hi - 1) / hi;
+            int maxParts = total / lo;
+            if (minParts > maxParts) return null;
+
+            int partCount = rng.Next(minParts, maxParts + 1);
+            var parts = new List<int>(partCount);
             int remaining = total;
-            while (remaining > hi)
+            for (int i = 0; i < partCount; i++)
             {
-                int maxP = Math.Min(hi, remaining - lo);
-                if (maxP < lo) maxP = lo;
-                int p = rng.Next(lo, maxP + 1);
+                int partsAfter = partCount - i - 1;
+                int minPart = Math.Max(lo, remaining - partsAfter * hi);
+                int maxPart = Math.Min(hi, remaining - partsAfter * lo);
+                int p = partsAfter == 0 ? remaining : rng.Next(minPart, maxPart + 1);
                 parts.Add(p);
                 remaining -= p;
             }
-            parts.Add(remaining);
             return parts;
         }
 

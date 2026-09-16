@@ -41,14 +41,15 @@ namespace WordAssociationsSolitaire
         private List<Card> _dragCards = new();
         private Vector2 _grabOffset;
         private Vector2 _mouse;
+        private readonly Dictionary<string, string[]> _wordLineCache = new(StringComparer.Ordinal);
 
         private Rectangle _newGameButton;
 
-        // Win scoring: time the game and record moves-remaining + duration into the high-score table.
+        // Win scoring: time the game and record moves used + duration into the high-score table.
         private readonly System.Diagnostics.Stopwatch _gameTimer = new();
         private bool _scoreRecorded;
         private int _scoreRank = -1;               // this run's row in the top-5 (or -1)
-        private int _winMovesLeft;                 // captured at the moment of winning
+        private int _winMovesUsed;                 // captured at the moment of winning
         private double _winSeconds;
         private System.Collections.Generic.List<ScoreEntry> _topScores = new();
 
@@ -226,11 +227,11 @@ namespace WordAssociationsSolitaire
 
             var ks = Keyboard.GetState();
             bool ctrl = ks.IsKeyDown(Keys.LeftControl) || ks.IsKeyDown(Keys.RightControl);
-            bool modal = _helpOpen || _defineActive; // don't mutate the board behind a popup
+            bool modal = _helpOpen || _defineActive || _settingsOpen; // don't mutate the board behind a popup
             if (active)
             {
-                if (!modal && ctrl && ks.IsKeyDown(Keys.Z) && !_prevKeyboard.IsKeyDown(Keys.Z)) Undo();
-                if (!modal && ks.IsKeyDown(Keys.H) && !_prevKeyboard.IsKeyDown(Keys.H)) ShowHint();
+                if (!modal && !Dealing && ctrl && ks.IsKeyDown(Keys.Z) && !_prevKeyboard.IsKeyDown(Keys.Z)) Undo();
+                if (!modal && !Dealing && ks.IsKeyDown(Keys.H) && !_prevKeyboard.IsKeyDown(Keys.H)) ShowHint();
                 // Escape peels back one layer: close the topmost popup / open menu, otherwise de-select
                 // a keyboard-selected card. It never quits the game (use the window's close button).
                 if (ks.IsKeyDown(Keys.Escape) && !_prevKeyboard.IsKeyDown(Keys.Escape) && !CloseTopmostOverlay())
@@ -246,14 +247,14 @@ namespace WordAssociationsSolitaire
             UpdateHoverNarration(active && mouseMoved);
             UpdateAccessibilityAnnouncements();
 
-            // Record the score the instant the game is won (time stops, moves-left frozen).
+            // Record the score the instant the game is won.
             if (_board.State == GameState.Won && !_scoreRecorded)
             {
                 _scoreRecorded = true;
                 _gameTimer.Stop();
-                _winMovesLeft = _board.MovesLeft;
+                _winMovesUsed = _board.MovesMade;
                 _winSeconds = _gameTimer.Elapsed.TotalSeconds;
-                _topScores = ScoreBoard.Record(_winMovesLeft, _winSeconds, out _scoreRank);
+                _topScores = ScoreBoard.Record(_winMovesUsed, _winSeconds, out _scoreRank);
             }
 
             _prevMouse = ms;
@@ -817,7 +818,9 @@ namespace WordAssociationsSolitaire
             Color ring = won ? Gold : new Color(236, 140, 110);
             DrawRoundRing(panel, new Color(ring.R, ring.G, ring.B, (int)(ring.A * e)));
 
-            string title = won ? "YOU WIN!" : "OUT OF MOVES";
+            string title = won
+                ? "YOU WIN!"
+                : _board.LossReason == LossReason.OutOfMoves ? "OUT OF MOVES" : "NO LEGAL MOVES";
             Color tc = won ? new Color(255, 222, 120) : new Color(255, 158, 128);
             // Rendered from the 48px GameFontLarge so the big title stays crisp instead of being a
             // blurry 2x upscale of the 22px body font; same on-screen size as before (22*2.0 / 48).
@@ -826,7 +829,7 @@ namespace WordAssociationsSolitaire
 
             if (won)
             {
-                DrawLabel($"Cleared all {_board.TotalCategories} sets with {_winMovesLeft} moves left in {FormatTime(_winSeconds)}.",
+                DrawLabel($"Cleared all {_board.TotalCategories} sets in {_winMovesUsed} moves and {FormatTime(_winSeconds)}.",
                           panel.Center.X, panel.Y + Sc(128), panel.Width - Sc(56), Cov(new Color(220, 226, 220), e), 0.62f * S);
                 DrawScoreTable(panel, e, panel.Y + Sc(188));
                 DrawLabel("Click \"New Game\" to play again", panel.Center.X, panel.Bottom - Sc(30),
@@ -849,7 +852,7 @@ namespace WordAssociationsSolitaire
             return $"{total / 60}:{total % 60:00}";
         }
 
-        /// The best-scores table on the win panel: rank, moves left, and time, with this run's row
+        /// The best-scores table on the win panel: rank, moves used, and time, with this run's row
         /// highlighted if it placed. `top` is the y of the "Best Scores" heading.
         private void DrawScoreTable(Rectangle panel, float e, int top)
         {
@@ -862,7 +865,7 @@ namespace WordAssociationsSolitaire
             int colY = top + Sc(34);
             Color hc = Cov(new Color(184, 204, 194), e);
             DrawTextFit("#", cRank, colY, Sc(44), hc, 0.54f * S);
-            DrawTextFit("Moves Left", cMoves, colY, Sc(180), hc, 0.54f * S);
+            DrawTextFit("Moves Used", cMoves, colY, Sc(180), hc, 0.54f * S);
             DrawTextFit("Time", cTime, colY, Sc(130), hc, 0.54f * S);
 
             int rowH = Sc(30);
@@ -879,7 +882,7 @@ namespace WordAssociationsSolitaire
                                       Cov(new Color(74, 132, 96, 150), e));
                     Color rc = Cov(mine ? new Color(255, 236, 150) : Color.White, e);
                     DrawTextFit($"{i + 1}", cRank, y, Sc(44), rc, 0.62f * S);
-                    DrawTextFit($"{s.MovesLeft}", cMoves, y, Sc(180), rc, 0.62f * S);
+                    DrawTextFit($"{s.MovesUsed}", cMoves, y, Sc(180), rc, 0.62f * S);
                     DrawTextFit(FormatTime(s.Seconds), cTime, y, Sc(130), rc, 0.62f * S);
                 }
                 else
@@ -1134,11 +1137,16 @@ namespace WordAssociationsSolitaire
         /// single word behaves exactly like DrawTextFit.
         private void DrawWordLines(string text, float cx, float cy, float maxWidth, Color color, float baseScale)
         {
-            var lines = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            if (lines.Length <= 1)
+            if (text.IndexOf(' ') < 0)
             {
                 DrawTextFit(text, (int)Math.Round(cx), (int)Math.Round(cy), (int)Math.Round(maxWidth), color, baseScale);
                 return;
+            }
+
+            if (!_wordLineCache.TryGetValue(text, out var lines))
+            {
+                lines = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                _wordLineCache[text] = lines;
             }
 
             float lineH = _font.MeasureString("Ag").Y;

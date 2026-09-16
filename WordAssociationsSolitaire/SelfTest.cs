@@ -128,9 +128,23 @@ namespace WordAssociationsSolitaire
             Console.WriteLine($"Constructed deals winnable (of {builtN}): {builtN - builtFailures - builtNull}/{builtN} " +
                               $"(null {builtNull}, moves {builtMin}-{builtMax})");
 
+            // A constructive deal must reject, rather than violate, set-size constraints that
+            // cannot exactly fill a configured segment (the default four-card column vs min 5).
+            var incompatible = cfg.Clone();
+            incompatible.MinSetSize = 5;
+            incompatible.MaxSetSize = 8;
+            bool partitionBoundsOk = WordData.DealWinnable(incompatible, new Random(17)) == null;
+            Console.WriteLine(partitionBoundsOk
+                ? "Constructive set-size bounds: OK"
+                : "Constructive set-size bounds: FAIL");
+
             // 6) Base-stacking rule: a base may never be placed onto a non-empty column.
             bool ruleOk = BaseStackingRuleOk(out string ruleDetail);
             Console.WriteLine(ruleOk ? "Base-stacking rule: OK" : $"Base-stacking rule: FAIL -> {ruleDetail}");
+
+            // 6a) Move accounting remains accurate in limited and unlimited modes.
+            bool moveAccountingOk = MoveAccountingOk(out string moveAccountingDetail);
+            Console.WriteLine(moveAccountingOk ? "Move accounting: OK" : $"Move accounting: FAIL -> {moveAccountingDetail}");
 
             // 6b) Dead-end detection: Lost when no card (board or deck) can be placed anywhere.
             bool deadEndOk = DeadEndDetectionOk(out string deadEndDetail);
@@ -148,7 +162,7 @@ namespace WordAssociationsSolitaire
 
             bool ok = dupes.Count == 0 && badTotals == 0 && failures == 0 && winnableFirstTry > 0
                       && builtFailures == 0 && ruleOk && deadEndOk && narrOk && distOk && noDef == 0
-                      && conflictFree;
+                      && conflictFree && partitionBoundsOk && moveAccountingOk;
             Console.WriteLine(ok ? "RESULT: PASS" : "RESULT: FAIL");
             return ok ? 0 : 1;
         }
@@ -241,6 +255,40 @@ namespace WordAssociationsSolitaire
             return pass;
         }
 
+        private static bool MoveAccountingOk(out string detail)
+        {
+            detail = "";
+            var cats = new List<Category> { new Category(0, "A", "ABASE", 2) };
+            var columns = new List<List<Card>> { new List<Card>() };
+            var stock = new List<Card>
+            {
+                new Card(0, "A1", 0, false),
+                new Card(1, "ABASE", 0, true),
+            };
+            var board = new GameBoard(cats, columns, stock, 1, 3);
+
+            if (!board.Draw() || board.MovesMade != 1 || board.MovesLeft != 2)
+            {
+                detail = $"limited draw produced made={board.MovesMade}, left={board.MovesLeft}";
+                return false;
+            }
+
+            board.Unlimited = true;
+            if (!board.Draw() || board.MovesMade != 2 || board.MovesLeft != 2)
+            {
+                detail = $"unlimited draw produced made={board.MovesMade}, left={board.MovesLeft}";
+                return false;
+            }
+
+            var clone = board.Clone();
+            if (clone.MovesMade != board.MovesMade)
+            {
+                detail = $"clone lost move count {board.MovesMade}->{clone.MovesMade}";
+                return false;
+            }
+            return true;
+        }
+
         /// Verifies dead-end detection: a game is Lost the instant no card on the board OR in
         /// the deck can be legally placed anywhere (a draw can never change that), even while the
         /// stock/waste still holds cards — and stays Playing whenever some placement remains.
@@ -281,7 +329,13 @@ namespace WordAssociationsSolitaire
             }
 
             // True dead end -> Lost even though the stock still holds a card.
-            Expect(Build(1, false).State, GameState.Lost, "frozen board");
+            var frozen = Build(1, false);
+            Expect(frozen.State, GameState.Lost, "frozen board");
+            if (frozen.LossReason != LossReason.NoLegalMoves && firstFail == "")
+                firstFail = $"frozen board reason expected {LossReason.NoLegalMoves} got {frozen.LossReason}";
+            string frozenText = Narrate.Loss(frozen);
+            if (!frozenText.StartsWith("No legal moves remain.") && firstFail == "")
+                firstFail = $"frozen board narration was \"{frozenText}\"";
             // A free slot lets B's base be played -> still Playing.
             Expect(Build(2, false).State, GameState.Playing, "free slot");
             // An empty column lets any card relocate -> still Playing.
@@ -291,6 +345,11 @@ namespace WordAssociationsSolitaire
             budget.MovesLeft = 0;
             budget.UpdateState();
             Expect(budget.State, GameState.Lost, "no moves left");
+            if (budget.LossReason != LossReason.OutOfMoves && firstFail == "")
+                firstFail = $"budget reason expected {LossReason.OutOfMoves} got {budget.LossReason}";
+            string budgetText = Narrate.Loss(budget);
+            if (!budgetText.StartsWith("Out of moves.") && firstFail == "")
+                firstFail = $"budget narration was \"{budgetText}\"";
 
             detail = firstFail;
             return firstFail == "";
